@@ -3,7 +3,7 @@ a tool to transfer sql server database to mysql
 
 ## Install
 ```bash
-go get github.com/hyperqms2my
+go get github.com/hyperq/ms2my
 ```
 
 ## How to use
