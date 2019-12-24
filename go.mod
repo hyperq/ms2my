@@ -1,4 +1,4 @@
-module ms2my
+module github.com/hyperq/ms2my
 
 go 1.13
 
