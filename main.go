@@ -15,8 +15,8 @@ limitations under the License.
 */
 package main
 
-import "ms2my/cmd"
+import "github.com/hyperq/ms2my/cmd"
 
 func main() {
-  cmd.Execute()
+	cmd.Execute()
 }
