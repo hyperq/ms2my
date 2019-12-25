@@ -7,44 +7,97 @@ import (
 	"strings"
 
 	_ "github.com/denisenkom/go-mssqldb"
+	"github.com/didi/gendry/scanner"
 )
 
 var mssql *sql.DB
 
+type columns struct {
+	TableName           string `ddb:"tablename"`
+	TableComment        string `ddb:"tablecomment"`
+	ColumnName          string `ddb:"columnname"`
+	PK                  int    `ddb:"pk"`
+	ColumnType          string `ddb:"columntype"`
+	ColumnLength        int    `ddb:"columnlength"`
+	ColumnDecimalLength int    `ddb:"columndecimallength"`
+	Null                int    `ddb:"nulls"`
+	ColumnDefault       string `ddb:"columndefault"`
+	ColumnComment       string `ddb:"columncomment"`
+}
+
 func generateCreate(table string) (creates string, err error) {
-	rows, err := mssql.Query("select Top 1 * from " + table)
+	rows, err := mssql.Query(fmt.Sprintf(`
+	SELECT
+      tablename=d.name,
+      tablecomment=isnull(f.value,''),
+      columnname=a.name,
+      pk=case when exists(SELECT 1 FROM sysobjects where xtype='PK' and name in (
+         SELECT name FROM sysindexes WHERE indid in(
+			SELECT indid FROM sysindexkeys WHERE id=a.id AND colid=a.colid
+         ))) then 1 else 0 end,
+      columntype=b.name,
+      columnlength=COLUMNPROPERTY(a.id,a.name,'PRECISION'),
+  	  columndecimallength=isnull(COLUMNPROPERTY(a.id,a.name,'Scale'),0),
+  	  nulls=case when a.isnullable=1 then 1 else 0 end,
+  	  columndefault=isnull(e.text,''),
+      columncomment=isnull(g.[value],'')
+ 	FROM syscolumns a
+      left join systypes b on a.xusertype=b.xusertype
+	  inner join sysobjects d on a.id=d.id and d.xtype='U' and d.name<>'dtproperties'
+      left join syscomments e on a.cdefault=e.id
+      left join sys.extended_properties g on a.id=g.major_id and a.colid=g.minor_id
+      left join sys.extended_properties f on d.id=f.major_id and f.minor_id=0
+    where d.name='%s' 
+    order by a.id,a.colorder
+	`, table))
 	if err != nil {
 		return
 	}
-	columntype, err := rows.ColumnTypes()
+	var cs []columns
+	err = scanner.ScanClose(rows, &cs)
 	if err != nil {
 		return
 	}
 	create := "-- ----------------------------\n-- Table structure for %s\n-- ----------------------------\nDROP TABLE IF EXISTS `%s" +
-		"`;\nCREATE TABLE `%s`(\n%s\n);\n"
+		"`;\nCREATE TABLE `%s`(\n%s\n%s\n);\n"
 	var columns []string
-	for _, v := range columntype {
-		name := v.Name()
-		precision, scale, ok := v.DecimalSize()
-		length, ok2 := v.Length()
-		typename := strings.ToLower(v.DatabaseTypeName())
-		ct, ok3 := ms2sqltype[typename]
+	var pks string
+	for _, v := range cs {
+		if v.PK == 1 {
+			pks = fmt.Sprintf("\tprimary key(%s)", v.ColumnName)
+		}
+		ct, ok3 := ms2sqltype[v.ColumnType]
 		if !ok3 {
-			err = errors.New("暂不支持" + typename)
+			err = errors.New("暂不支持" + v.ColumnType)
 			return
 		}
-		if ct.TransferType != "text" {
-			if ok2 {
-				ct.TransferType = fmt.Sprintf("%s(%d)", ct.TransferType, length)
-			}
-			if ok {
-				ct.TransferType = fmt.Sprintf("%s(%d,%d)", ct.TransferType, precision, scale)
+		ts := ct.TransferType
+		if v.ColumnType == "timestamp" {
+			ts = "timestamp(6)"
+		} else {
+			if ct.TransferType != "text" && ct.TransferType != "datetime" && v.ColumnType != "uniqueidentifier" && v.ColumnType != "bit" {
+				if v.ColumnLength > 0 {
+					ts = fmt.Sprintf("%s(%d)", ct.TransferType, v.ColumnLength)
+				}
+				if v.ColumnDecimalLength > 0 {
+					ts = fmt.Sprintf("%s(%d,%d)", ct.TransferType, v.ColumnLength, v.ColumnDecimalLength)
+				}
 			}
 		}
-		col := fmt.Sprintf("\t`%s` %s,\n", name, ct.TransferType)
+		col := fmt.Sprintf("\t`%s` %s", v.ColumnName, ts)
+		if v.Null == 1 {
+			col = col + " NOT NULL"
+		}
+		if v.ColumnDefault != "" && ct.TransferType != "text" {
+			col = col + " DEFAULT " + strings.Trim(strings.Trim(v.ColumnDefault, "("), ")")
+		}
+		if v.ColumnComment != "" {
+			col = col + " COMMENT '" + v.ColumnComment + "'"
+		}
+		col += ",\n"
 		columns = append(columns, col)
 	}
-	creates = fmt.Sprintf(create, table, table, table, strings.Trim(strings.Join(columns, ""), ",\n"))
+	creates = fmt.Sprintf(create, table, table, table, strings.Join(columns, ""), pks)
 	return
 }
 func reverse(b []uint8) {
