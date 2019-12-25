@@ -63,7 +63,7 @@ func generateCreate(table string) (creates string, err error) {
 	var columns []string
 	var pks string
 	for _, v := range cs {
-		if v.PK == 1 {
+		if v.PK == 1 && pks != "" {
 			pks = fmt.Sprintf("\tprimary key(%s)", v.ColumnName)
 		}
 		ct, ok3 := ms2sqltype[v.ColumnType]
