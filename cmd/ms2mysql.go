@@ -84,7 +84,7 @@ func generateCreate(table string) (creates string, err error) {
 				}
 			}
 		}
-		col := fmt.Sprintf("\t`%s` %s", v.ColumnName, ts)
+		col := fmt.Sprintf("\t`%s` %s", checkik(v.ColumnName), ts)
 		if v.Null == 1 {
 			col = col + " NOT NULL"
 		}
@@ -106,6 +106,11 @@ func reverse(b []uint8) {
 	}
 }
 
+type columntypes struct {
+	Name     string
+	Typename string
+}
+
 func generateInsert(table string) (inserts string, err error) {
 	rows, err := mssql.Query("select * from " + table)
 	if err != nil {
@@ -120,8 +125,11 @@ func generateInsert(table string) (inserts string, err error) {
 	columnlength := len(columntype)
 	var insertsqls []string
 	values := make([]interface{}, columnlength)
+	cts := make([]columntypes, columnlength)
 	for i := 0; i < columnlength; i++ {
 		values[i] = new(interface{})
+		cts[i].Name = checkik(columntype[i].Name())
+		cts[i].Typename = columntype[i].DatabaseTypeName()
 	}
 	for rows.Next() {
 		err = rows.Scan(values...)
@@ -131,8 +139,8 @@ func generateInsert(table string) (inserts string, err error) {
 		}
 		var key []string
 		var val []string
-		for k, v := range columntype {
-			DatabaseTypeName := v.DatabaseTypeName()
+		for k, v := range cts {
+			DatabaseTypeName := v.Typename
 			if DatabaseTypeName == "BINARY" || DatabaseTypeName == "VARBINARY" {
 				continue
 			}
@@ -164,7 +172,7 @@ func generateInsert(table string) (inserts string, err error) {
 			if ct.TransferInsert != nil {
 				vs = ct.TransferInsert(vs)
 			}
-			key = append(key, v.Name())
+			key = append(key, v.Name)
 			val = append(val, vs)
 		}
 		is := fmt.Sprintf("INSERT INTO %s (%s) values (%s);", table, strings.Join(key, ","), strings.Join(val, ","))
@@ -173,4 +181,12 @@ func generateInsert(table string) (inserts string, err error) {
 	inserts = "-- ----------------------------\n-- Records of bigbox \n-- ----------------------------\nBEGIN;\n" + strings.Join(
 		insertsqls, "\n") + "\nCOMMIT;\n"
 	return
+}
+
+func checkik(key string) string {
+	lkey := strings.ToUpper(key)
+	if _, ok := keyWorks[lkey]; ok {
+		return key + "s"
+	}
+	return key
 }
