@@ -60,6 +60,7 @@ and not support binrary`,
 				fmt.Println(err)
 				return
 			}
+			//f.WriteString("truncate table " + strings.ToLower(tablename) + ";\n")
 			insertsql, err := generateInsert(v)
 			if err != nil {
 				fmt.Println(err)

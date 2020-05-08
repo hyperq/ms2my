@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -68,8 +67,9 @@ func generateCreate(table string) (creates string, err error) {
 		}
 		ct, ok3 := ms2sqltype[v.ColumnType]
 		if !ok3 {
-			err = errors.New("暂不支持" + v.ColumnType)
-			return
+			//err = errors.New("暂不支持" + v.ColumnType)
+			//return
+			continue
 		}
 		ts := ct.TransferType
 		if v.ColumnType == "timestamp" {
@@ -97,7 +97,7 @@ func generateCreate(table string) (creates string, err error) {
 		col += ",\n"
 		columns = append(columns, col)
 	}
-	creates = fmt.Sprintf(create, table, table, table, strings.Join(columns, ""), pks)
+	creates = fmt.Sprintf(create, strings.ToLower(table), strings.ToLower(table), strings.ToLower(table), strings.Join(columns, ""), pks)
 	return
 }
 func reverse(b []uint8) {
@@ -112,7 +112,7 @@ type columntypes struct {
 }
 
 func generateInsert(table string) (inserts string, err error) {
-	rows, err := mssql.Query("select * from " + table)
+	rows, err := mssql.Query(fmt.Sprintf("select * from [%s]", table))
 	if err != nil {
 
 		return
@@ -166,8 +166,8 @@ func generateInsert(table string) (inserts string, err error) {
 			typename := strings.ToLower(DatabaseTypeName)
 			ct, ok3 := ms2sqltype[typename]
 			if !ok3 {
-				err = errors.New("暂不支持" + typename)
-				return
+				//err = errors.New("暂不支持" + typename)
+				continue
 			}
 			if ct.TransferInsert != nil {
 				vs = ct.TransferInsert(vs)
@@ -175,7 +175,7 @@ func generateInsert(table string) (inserts string, err error) {
 			key = append(key, v.Name)
 			val = append(val, vs)
 		}
-		is := fmt.Sprintf("INSERT INTO %s (%s) values (%s);", table, strings.Join(key, ","), strings.Join(val, ","))
+		is := fmt.Sprintf("INSERT INTO %s (%s) values (%s);", strings.ToLower(table), strings.Join(key, ","), strings.Join(val, ","))
 		insertsqls = append(insertsqls, is)
 	}
 	inserts = "-- ----------------------------\n-- Records of bigbox \n-- ----------------------------\nBEGIN;\n" + strings.Join(
